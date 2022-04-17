@@ -1,0 +1,232 @@
+---
+title: "Chaotic dynamical systems"
+author: "Luis Ramón Munive Hernández & Rodrigo Zúñiga Trejo"
+date: "9/3/2021"
+output: 
+  pdf_document:
+    keep_tex: true
+    latex_engine: xelatex
+header-inclues: \usepackage{amsmath, amsthm, amssymb}
+---
+
+The Lorenz dynamical system is a system of ordinary differential equations defined as:
+
+\begin{align*}
+\frac{\mathrm{d} x}{\mathrm{d} t} & = \sigma (y - x) \\
+\frac{\mathrm{d} y}{\mathrm{d} t} & = \rho x - y - x z \\
+\frac{\mathrm{d} z}{\mathrm{d} t} & = -\beta z + x y \\
+\end{align*}
+
+The default selection for this system parameters is $\sigma = 10, \rho = 28, \beta = 8 / 3$; is known to produce a deterministic chaotic time series.
+
+```{r}
+# Needed libraries
+library(deSolve)
+library(ggplot2)
+library(gg3D)
+library(latex2exp)
+library(nonlinearTseries)
+library(TDA)
+library(zoo)
+library(tseries)
+library(dplyr)
+library(lubridate)
+```
+
+```{r}
+# Function for plot path point cloud constructed via Takens' theorem
+make_plot <- function(df, theta, phi, title){
+  ggplot(df, aes(x = x, y = y, z = z, colour = time)) +
+    axes_3D(theta = theta, phi = phi) +
+    stat_3D(theta = theta, phi = phi, geom = "path", size = 1) +
+    labs_3D(theta = theta, phi = phi,
+            labs= c("x", "y", "z"),
+            angle = c(0, 0, 0),
+            hjust = c(0, 1, 1),
+            vjust = c(1, 1, 0), size = 7) +
+    ggtitle(title) +
+    theme_void() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+}
+```
+
+```{r}
+# Lorenz dynamical system
+
+## Parameters
+parms <- c(sigma = 10, beta = 8 / 3, rho = 28)
+## Initial conditions
+state <- c(x = -13, y = -14, z = 47)
+## Time span
+times <- seq(0, 50, by = 1 / 100)
+## Lorenz system differential equations
+lorenz <- function(times, state, parms){
+  with(data = as.list(c(state, parms)), expr = {
+    dxdt <- sigma * (y - x)
+    dydt <- rho * x - y - x * z
+    dzdt <- x * y - beta * z
+    return(list(c(dxdt, dydt, dzdt)))
+  })
+}
+
+## Making dataframe
+lorenz.df <- as.data.frame(ode(y = state, times = times, func = lorenz, parms = parms))
+## Lorenz time series for x variable
+lorenz.x <- lorenz.df$x
+```
+
+```{r Lorenz time series for x, fig.height=3, fig.width=7}
+## Ploting Lorenz time series for x variable
+plot(lorenz.x, type = "l", lwd = 1, xlab = "Time", ylab = "x", main = "Time series for x variable in Lorenz dynamical system", las = 1)
+```
+
+```{r Estimating tau and embedding dimension for Lorenz dynamical system, fig.height=3, fig.width=5}
+# Estimating tau and embedding dimension for construct point cloud
+
+## tau-delay estimation based on the mutual information function
+tau.lorenz <- timeLag(lorenz.x, technique = "ami", lag.max = 5000, do.plot = T)
+tau.lorenz
+## embedding dimension computed by using the Cao’s algorithm
+#embdim.lorenz <- estimateEmbeddingDim(lorenz.x, time.lag = tau.lorenz, max.embedding.dim = 30)
+#embdim.lorenz
+## phase space reconstruction via Takens' theorem
+tak.lorenz <- buildTakens(lorenz.x, embedding.dim = 3, time.lag = tau.lorenz)
+tak.lorenz.df <- as.data.frame(cbind(c(1:dim(tak.lorenz)[1]), tak.lorenz))
+colnames(tak.lorenz.df) <- c("time", "x", "y", "z")
+```
+
+```{r Path of point cloud for Lorenz time series constructed via Takens theorem, fig.height=6, fig.width=7, warning=FALSE}
+make_plot(tak.lorenz.df, theta = 45, phi = 0, title = "Takens' delay embedding attractor reconstruction of the\nstrange chaotic dynamics of Lorenz system") +
+  annotate(geom = "text", x = 0.05, y = -0.17, hjust = 0, label = TeX("$\\frac{d x}{d t} = \\sigma (y - x)$"), size = 7) +
+  annotate(geom = "text", x = 0.05, y = -0.27, hjust = 0, label = TeX("$\\frac{d y}{d t} = \\rho x - y - x z$"), size = 7) +
+  annotate(geom = "text", x = 0.05, y = -0.37, hjust = 0, label = TeX("$\\frac{d z}{d t} = - \\beta z + x y$"), size = 7) +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+```
+
+```{r}
+# Lyapunov exponent for Lorenz system
+sampling.period.lorenz <- diff(x = lorenz.df$time)[1]
+lyapunov.exp.lorenz <- maxLyapunov(time.series = lorenz.x,
+                                   sampling.period = sampling.period.lorenz,
+                                   min.embedding.dim = 3,
+                                   max.embedding.dim = 3 + 3,
+                                   time.lag = tau.lorenz,
+                                   radius = 1,
+                                   max.time.steps = 1000,
+                                   do.plot = FALSE)
+```
+
+```{r Lyapunov exponent for Lorenz system, fig.width=7, fig.height=5}
+plot(lyapunov.exp.lorenz, type = "l", xlim = c(0, 8))
+lyapunov.exp.lorenz.est <- estimate(x = lyapunov.exp.lorenz, regression.range = c(0, 3), do.plot = T, type = "l")
+lyapunov.exp.lorenz.est
+```
+
+```{r}
+# Sampling 500 rows of phase space reconstruction, it make cheaper the computation of persistence diagram
+set.seed(02092021)
+sample.tak.lorenz <- tak.lorenz[sample(x = 1:dim(tak.lorenz)[1], size = 500, replace = FALSE), ]
+# persistence diagram construction
+#diag.lorenz <- ripsDiag(sample.tak.lorenz[, c(1, 2)], maxdimension = 1, maxscale = max(dist(sample.tak.lorenz[, c(1, 2)])))
+diag.lorenz <- ripsDiag(sample.tak.lorenz, maxdimension = 2, maxscale = 7)
+```
+
+```{r Persistence diagram for Lorenz system, fig.height=4, fig.width=3.9}
+# plot persistence diagram
+plot(diag.lorenz$diagram, main = "Persistence diagram of\n Lorenz system")
+legend(x = "bottomright", legend = c("0-cycles", "1-cycles", "2-cycles"), lty = c(NA, NA, NA), pch = c(19, 2, 5), col = c("black", "violetred2", "deepskyblue3"), cex = 1, lwd = 2)
+```
+
+The Rössler dynamical system is a system of ordinary differential equations defined as:
+
+\begin{align*}
+\frac{\mathrm{d} x}{\mathrm{d} t} & = - y - z \\
+\frac{\mathrm{d} y}{\mathrm{d} t} & = x + a y \\
+\frac{\mathrm{d} z}{\mathrm{d} t} & = b + z (x - c) \\
+\end{align*}
+
+The default selection for this system parameters is $a = 0.2, b = 0.2, c = 5.7$; is known to produce a deterministic chaotic time series.
+
+```{r}
+# Rössler dynamical system
+
+## Parameters
+parms <- c(a = 0.2, b = 0.2, c = 5.7)
+## Initial conditions
+state <- c(x = -2, y = -10, z = 0.2)
+## Time span
+times <- seq(0, 50, by = 1 / 100)
+## Rössler system differential equations
+rossler <- function(times, state, parms){
+  with(data = as.list(c(state, parms)), expr = {
+    dxdt <- -(y + z)
+    dydt <- x + a * y
+    dzdt <- b + z * (x - c)
+    return(list(c(dxdt, dydt, dzdt)))
+  })
+}
+
+## Make dataframe
+rossler.df <- as.data.frame(ode(y = state, times = times, func = rossler, parms = parms))
+## Rössler time series for z variable
+rossler.x <- rossler.df$x
+```
+
+```{r Rössler time series for x, fig.height=3, fig.width=7}
+## Ploting Lorenz time series for x variable
+plot(rossler.x, type = "l", lwd = 1, xlab = "Time", ylab = "x", main = "Time series for x variable in Rössler dynamical system", las = 1)
+```
+
+```{r Estimating tau and embedding dimension for Rössler dynamical system, fig.height=3, fig.width=5}
+# Estimating tau and embedding dimension for construct point cloud
+
+## tau-delay estimation based on the mutual information function
+tau.rossler <- timeLag(rossler.x, technique = "ami", lag.max = 5000, do.plot = T)
+tau.rossler
+## phase space reconstruction via Takens' theorem
+tak.rossler <- buildTakens(rossler.x, embedding.dim = 3, time.lag = tau.rossler)
+tak.rossler.df <- as.data.frame(cbind(c(1:dim(tak.rossler)[1]), tak.rossler))
+colnames(tak.rossler.df) <- c("time", "x", "y", "z")
+```
+
+```{r Path of point cloud for Rössler time series constructed via Takens theorem, fig.height=6, fig.width=7, warning=FALSE}
+make_plot(tak.rossler.df, theta = 45, phi = 0, title = "Takens' delay embedding attractor reconstruction of the\nstrange chaotic dynamics of Rössler system") +
+  annotate(geom = "text", x = 0.05, y = -0.17, hjust = 0, label = TeX("$\\frac{d x}{d t} = - y - z$"), size = 7) +
+  annotate(geom = "text", x = 0.05, y = -0.27, hjust = 0, label = TeX("$\\frac{d y}{d t} = x + a y$"), size = 7) +
+  annotate(geom = "text", x = 0.05, y = -0.37, hjust = 0, label = TeX("$\\frac{d z}{d t} = b + z (x - c)$"), size = 7) +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+```
+
+```{r}
+# Lyapunov exponent for Rössler system
+sampling.period.rossler <- diff(x = rossler.df$time)[1]
+lyapunov.exp.rossler <- maxLyapunov(time.series = rossler.x,
+                                   sampling.period = sampling.period.rossler,
+                                   min.embedding.dim = 3,
+                                   max.embedding.dim = 3 + 3,
+                                   time.lag = tau.rossler,
+                                   radius = 1,
+                                   max.time.steps = 1000,
+                                   do.plot = FALSE)
+```
+
+```{r Lyapunov exponent for Rössler system, fig.width=7, fig.height=5}
+plot(lyapunov.exp.rossler, type = "l", xlim = c(0, 8))
+lyapunov.exp.rossler.est <- estimate(x = lyapunov.exp.rossler, regression.range = c(0, 3), do.plot = T, type = "l")
+lyapunov.exp.rossler.est
+```
+
+```{r}
+# Sampling 500 rows of phase space reconstruction, it make cheaper the computation of persistence diagram
+set.seed(02092021)
+sample.tak.rossler <- tak.rossler[sample(x = 1:dim(tak.rossler)[1], size = 500, replace = FALSE), ]
+# persistence diagram construction
+diag.rossler <- ripsDiag(sample.tak.rossler, maxdimension = 2, maxscale = 7)
+```
+
+```{r Persistence diagram for Rössler system, fig.height=4, fig.width=3.9}
+# plot persistence diagram
+plot(diag.rossler$diagram, main = "Persistence diagram of\n Rössler system")
+legend(x = "bottomright", legend = c("0-cycles", "1-cycles", "2-cycles"), lty = c(NA, NA, NA), pch = c(19, 2, 5), col = c("black", "violetred2", "deepskyblue3"), cex = 1, lwd = 2)
+```
+

@@ -1,0 +1,153 @@
+---
+title: "Stationary stochastic process"
+author: "Luis Ramón Munive Hernández & Rodrigo Zúñiga Trejo"
+date: "9/3/2021"
+output: 
+  pdf_document:
+    keep_tex: true
+    latex_engine: xelatex
+header-inclues: \usepackage{amsmath, amsthm, amssymb}
+---
+
+Sunspots time series data.
+
+Monthly mean relative sunspot numbers from 1749 to 1983. Collected at Swiss Federal Observatory, Zurich until 1960, then Tokyo Astronomical Observatory.
+
+```{r}
+# Needed libraries
+library(deSolve)
+library(ggplot2)
+library(gg3D)
+library(latex2exp)
+library(nonlinearTseries)
+library(TDA)
+library(zoo)
+library(tseries)
+library(dplyr)
+library(lubridate)
+```
+
+```{r}
+# Function for plot path point cloud constructed via Takens' theorem
+make_plot <- function(df, theta, phi, title){
+  ggplot(df, aes(x = x, y = y, z = z, colour = time)) +
+    axes_3D(theta = theta, phi = phi) +
+    stat_3D(theta = theta, phi = phi, geom = "path", size = 1) +
+    labs_3D(theta = theta, phi = phi,
+            labs= c("x", "y", "z"),
+            angle = c(0, 0, 0),
+            hjust = c(0, 1, 1),
+            vjust = c(1, 1, 0), size = 7) +
+    ggtitle(title) +
+    theme_void() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+}
+```
+
+```{r}
+monthly.sunspots <- read.csv("monthly-sunspots.csv", header = TRUE, stringsAsFactors = FALSE)
+monthly.sunspots$Month <- as.yearmon(monthly.sunspots$Month, "%Y-%m")
+monthly.sunspots.df <- as.data.frame(monthly.sunspots)
+sunspots.ts <- zoo(monthly.sunspots$Sunspots, monthly.sunspots$Month)
+```
+
+```{r Sunspots time series, fig.height=3, fig.width=7}
+## Ploting monthly sunspots time series
+plot(sunspots.ts, type = "l", lwd = 1, xlab = "Time", ylab = "Mean sunspots", main = "Monthly sunspot numbers time series 1749-1983", las = 1)
+```
+
+```{r Estimating tau and embedding dimension for sunspots time series, fig.height=3, fig.width=5}
+# Estimating tau and embedding dimension for construct point cloud
+
+## tau-delay estimation based on the auto mutual information
+tau.sunspots <- timeLag(monthly.sunspots$Sunspots, technique = "ami", lag.max = 2820, do.plot = T)
+tau.sunspots
+## phase space reconstruction via Takens' theorem
+tak.sunspots <- buildTakens(monthly.sunspots$Sunspots, embedding.dim = 3, time.lag = tau.sunspots)
+tak.sunspots.df <- as.data.frame(cbind(c(1:dim(tak.sunspots)[1]), tak.sunspots))
+colnames(tak.sunspots.df) <- c("time", "x", "y", "z")
+```
+
+```{r Path of point cloud for sunspots time series constructed via Takens theorem, fig.height=6, fig.width=7}
+make_plot(tak.sunspots.df, theta = 45, phi = 0, title = "Takens' delay embedding attractor reconstruction of the\n monthly sunspots time series dataset") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+```
+
+```{r}
+# Augmented Dickey-Fuller test for sunspots time series
+adf.test(monthly.sunspots$Sunspots)
+```
+
+```{r}
+# Sampling 200 rows of phase space reconstruction, it make cheaper the computation of persistence diagram
+set.seed(02092021)
+sample.tak.sunspots <- tak.sunspots[sample(x = 1:dim(tak.sunspots)[1], size = 200, replace = FALSE), ]
+# persistence diagram construction
+diag.sunspots <- ripsDiag(sample.tak.sunspots, maxdimension = 2, maxscale = 80)
+```
+
+```{r Persistence diagram for sunspots time series, fig.height=4, fig.width=3.9}
+# plot persistence diagram
+plot(diag.sunspots$diagram, main = "Persistence diagram of\n sunspots time series dataset")
+legend(x = "bottomright", legend = c("0-cycles", "1-cycles", "2-cycles"), lty = c(NA, NA, NA), pch = c(19, 2, 5), col = c("black", "violetred2", "deepskyblue3"), cex = 1, lwd = 2)
+```
+
+Daily maximum temperature in Mexico State.
+
+```{r}
+temperature <- read.csv("daily_temperature_15170_station.csv", header = TRUE)
+temperature <- temperature[, -6]
+```
+
+```{r}
+temperature$TMAX[is.na(temperature$TMAX)] <- runif(n = length(which(is.na(temperature$TMAX))), min = mean(na.omit(temperature$TMAX)) - sd(na.omit(temperature$TMAX)), max = mean(na.omit(temperature$TMAX)) + sd(na.omit(temperature$TMAX)))
+```
+
+```{r}
+fechas <- seq.Date(from = as.Date("1952-01-01", "%Y-%m-%d"),
+                   to = as.Date("2017-12-31", "%Y-%m-%d"),
+                   by="day")
+
+temperature.ts <- zoo(temperature$TMAX, fechas)
+```
+
+```{r Daily maximum temperature in Mexico State time series, fig.height=3, fig.width=7}
+## Ploting daily maximum temperature in Mexico State time series
+plot(temperature.ts , type = "l", lwd = 1, xlab = "Time", ylab = "Temperature (°C)", main = "Daily maximum temperature in Mexico State time series 1952-2017", las = 1)
+```
+
+```{r tau and embedding dimension of temperature time series via Takens theorem, fig.height=3, fig.width=5}
+# Takens embedding temperature time series
+
+## tau-delay estimation based on the mutual information function
+tau.temperature <- timeLag(temperature$TMAX, technique = "ami", lag.max = 22715, do.plot = T)
+tau.temperature
+## phase space reconstruction via Takens' theorem
+tak.temperature <- buildTakens(temperature$TMAX, embedding.dim = 3, time.lag = tau.temperature)
+tak.temperature.df <- as.data.frame(cbind(c(1:dim(tak.temperature)[1]), tak.temperature))
+colnames(tak.temperature.df) <- c("time", "x", "y", "z")
+```
+
+```{r Path of point cloud for temperature time series constructed via Takens theorem, fig.height=6, fig.width=7}
+make_plot(tak.temperature.df, theta = 45, phi = 0, title = "Takens' delay embedding attractor reconstruction of the\n daily temperature time series dataset") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+```
+
+```{r}
+# Augmented Dickey-Fuller test for temperature time series
+adf.test(temperature$TMAX)
+```
+
+```{r}
+# Sampling 500 rows of phase space reconstruction, it make cheaper the computation of persistence diagram
+set.seed(02092021)
+sample.tak.temperature <- tak.temperature[sample(x = 1:dim(tak.temperature)[1], size = 200, replace = FALSE), ]
+# persistence diagram construction
+diag.temperature <- ripsDiag(sample.tak.temperature, maxdimension = 2, maxscale = 10)
+```
+
+```{r Persistence diagram for temperature time series, fig.height=4, fig.width=3.9}
+# plot persistence diagram
+plot(diag.temperature$diag, main = "Persistence diagram of\ntemperature time series dataset")
+legend(x = "bottomright", legend = c("0-cycles", "1-cycles", "2-cycles"), lty = c(NA, NA, NA), pch = c(19, 2, 5), col = c("black", "violetred2", "deepskyblue3"), cex = 1, lwd = 2)
+```

@@ -1,0 +1,202 @@
+---
+title: "Nonchaotic dynamical systems"
+author: "Luis Ramón Munive Hernández & Rodrigo Zúñiga Trejo"
+date: "9/3/2021"
+output: 
+  pdf_document:
+    keep_tex: true
+    latex_engine: xelatex
+header-inclues: \usepackage{amsmath, amsthm, amssymb}
+---
+
+The following system belongs to four-term dynamical system with two quadratic term family [Heidel, J., & Fu, Z. (1999)]. It is a system of ordinary differential equations defined as:
+
+\begin{align*}
+\frac{\mathrm{d} x}{\mathrm{d} t} & = y^2 + y z\\
+\frac{\mathrm{d} y}{\mathrm{d} t} & = x \\
+\frac{\mathrm{d} z}{\mathrm{d} z} & = y \\
+\end{align*}
+
+The system has a nonchaotic behaviour.
+
+```{r}
+# Needed libraries
+library(deSolve)
+library(ggplot2)
+library(gg3D)
+library(latex2exp)
+library(nonlinearTseries)
+library(TDA)
+library(zoo)
+library(tseries)
+library(dplyr)
+library(lubridate)
+```
+
+```{r}
+# Function for plot path point cloud constructed via Takens' theorem
+make_plot <- function(df, theta, phi, title){
+  ggplot(df, aes(x = x, y = y, z = z, colour = time)) +
+    axes_3D(theta = theta, phi = phi) +
+    stat_3D(theta = theta, phi = phi, geom = "path", size = 1) +
+    labs_3D(theta = theta, phi = phi,
+            labs= c("x", "y", "z"),
+            angle = c(0, 0, 0),
+            hjust = c(0, 1, 1),
+            vjust = c(1, 1, 0), size = 7) +
+    ggtitle(title) +
+    theme_void() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+}
+```
+
+```{r}
+# Four-term dynamical system
+
+## Parameters
+parms <- c(a = 1, b = 1, c = 1)
+## Initial conditions
+state <- c(x = 0.01, y = 0, z = 0)
+## Time span
+times <- seq(0, 10, by = 1 / 100)
+## Four-term system differential equations
+four.term <- function(times, state, parms){
+  with(data = as.list(c(state, parms)), expr = {
+    dxdt <- a * y^2 + y * z
+    dydt <- b * x
+    dzdt <- c * y
+    return(list(c(dxdt, dydt, dzdt)))
+  })
+}
+
+## Make dataframe
+four.term.df <- as.data.frame(ode(y = state, times = times, func = four.term, parms = parms))
+## Four-term time series for y variable
+four.term.y <- four.term.df$y
+```
+
+```{r Four-term time series for x, fig.height=3, fig.width=7}
+## Ploting Lorenz time series for x variable
+plot(four.term.y, type = "l", lwd = 1, xlab = "Time", ylab = "y", main = "Time series for y variable in four-term dynamical system", las = 1)
+```
+
+```{r Estimating tau and embedding dimension for four-term dynamical system, fig.height=3, fig.width=5}
+# Estimating tau and embedding dimension for construct point cloud
+
+## tau-delay estimation based on the mutual information function
+tau.four.term <- timeLag(four.term.y, technique = "ami", lag.max = 5000, do.plot = T)
+tau.four.term
+## phase space reconstruction via Takens' theorem
+tak.four.term <- buildTakens(four.term.y, embedding.dim = 3, time.lag = tau.four.term)
+tak.four.term.df <- as.data.frame(cbind(c(1:dim(tak.four.term)[1]), tak.four.term))
+colnames(tak.four.term.df) <- c("time", "x", "y", "z")
+```
+
+```{r Path of point cloud for four-term time series constructed via Takens theorem, fig.height=6, fig.width=7}
+make_plot(tak.four.term.df, theta = 45, phi = 0, title = "Takens' delay embedding attractor reconstruction of the\n nonchaotic dynamics of four-term system") +
+  annotate(geom = "text", x = 0.05, y = -0.17, hjust = 0, label = TeX("$\\frac{d x}{d t} = y^2 + y z$"), size = 7) +
+  annotate(geom = "text", x = 0.05, y = -0.27, hjust = 0, label = TeX("$\\frac{d y}{d t} = x$"), size = 7) +
+  annotate(geom = "text", x = 0.05, y = -0.37, hjust = 0, label = TeX("$\\frac{d z}{d t} = y$"), size = 7) +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+```
+
+```{r}
+# Lyapunov exponent for four-term system
+sampling.period.four.term <- diff(x = four.term.df$time)[1]
+lyapunov.exp.four.term <- maxLyapunov(time.series = four.term.y,
+                                   sampling.period = sampling.period.four.term,
+                                   min.embedding.dim = 3,
+                                   max.embedding.dim = 3 + 3,
+                                   time.lag = tau.four.term,
+                                   radius = 1,
+                                   max.time.steps = 1000,
+                                   do.plot = FALSE)
+```
+
+```{r Lyapunov exponent for four-term system, fig.width=7, fig.height=5}
+plot(lyapunov.exp.four.term, type = "l", xlim = c(0, 8))
+lyapunov.exp.four.term.est <- estimate(x = lyapunov.exp.four.term, regression.range = c(0, 3), do.plot = T, type = "l")
+lyapunov.exp.four.term.est
+```
+
+```{r}
+# Sampling 200 rows of phase space reconstruction, it make cheaper the computation of persistence diagram
+set.seed(02092021)
+sample.tak.four.term <- tak.four.term[sample(x = 1:dim(tak.four.term)[1], size = 200, replace = FALSE), ]
+# persistence diagram construction
+diag.four.term <- ripsDiag(sample.tak.four.term, maxdimension = 2, maxscale = 3)
+```
+
+```{r Persistence diagram for four-term system, fig.height=4, fig.width=3.9}
+# plot persistence diagram
+plot(diag.four.term$diagram, main = "Persistence diagram for\n four-term dynamical system")
+legend(x = "bottomright", legend = c("0-cycles", "1-cycles", "2-cycles"), lty = c(NA, NA, NA), pch = c(19, 2, 5), col = c("black", "violetred2", "deepskyblue3"), cex = 1, lwd = 2)
+```
+
+KIC 5520878 star 
+
+```{r}
+star <- read.csv("MAST_2021-09-04T2349", header = TRUE)
+star <- star[!is.na(star$SAP_FLUX), ]
+star.df <- as.data.frame(star)
+sap.flux <- star$SAP_FLUX / 10000
+```
+
+```{r KIC 5520878 star time series of SAP flux variable, fig.height=3, fig.width=7}
+## Ploting KIC 5520878 time series for SAP flux variable
+plot(star.df$SAP_FLUX / 10000 , type = "l", lwd = 1, xlab = "Time", ylab = "SAP flux", main = "Time series for Simple Aperture Photometry flux variable in\nKIC 5520878 star dynamics", las = 1)
+```
+
+```{r Estimating tau and embedding dimension for KIC 5520878 star time series, fig.height=3, fig.width=5}
+# Estimating tau and embedding dimension for construct point cloud
+
+## tau-delay estimation based on the mutual information function
+tau.star <- timeLag(sap.flux, technique = "ami", lag.max = 20000, do.plot = T)
+tau.star
+## phase space reconstruction via Takens' theorem
+tak.star <- buildTakens(sap.flux, embedding.dim = 3, time.lag = tau.star)
+tak.star.df <- as.data.frame(cbind(c(1:dim(tak.star)[1]), tak.star))
+colnames(tak.star.df) <- c("time", "x", "y", "z")
+```
+
+```{r Path of point cloud for KIC 5520878 time series constructed via Takens theorem, fig.height=6, fig.width=7}
+make_plot(tak.star.df, theta = 45, phi = 0, title = "Takens' delay embedding attractor reconstruction of the\n nonchaotic dynamics of KIC 5520878 star") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+```
+
+```{r}
+# Lyapunov exponent for KIC 5520878 star time series
+sampling.period.star <- diff(x = tak.star.df$time)[1]
+lyapunov.exp.star <- maxLyapunov(time.series = sap.flux,
+                                   sampling.period = sampling.period.star,
+                                   min.embedding.dim = 3,
+                                   max.embedding.dim = 3 + 3,
+                                   time.lag = tau.star,
+                                   radius = 1,
+                                   max.time.steps = 1000,
+                                   do.plot = FALSE)
+```
+
+```{r Lyapunov exponent for KIC 5520878 star time series, fig.width=7, fig.height=5}
+plot(lyapunov.exp.star, type = "l", xlim = c(0, 8))
+lyapunov.exp.star.est <- estimate(x = lyapunov.exp.star, regression.range = c(0, 3), do.plot = T, type = "l")
+lyapunov.exp.star.est
+```
+
+```{r}
+# Sampling 200 rows of phase space reconstruction, it make cheaper the computation of persistence diagram
+set.seed(02092021)
+sample.tak.star <- tak.star[sample(x = 1:dim(tak.star)[1], size = 200, replace = FALSE), ]
+# persistence diagram construction
+diag.star <- ripsDiag(sample.tak.star, maxdimension = 2, maxscale = 1)
+```
+
+```{r Persistence diagram for KIC 5520878 star time series, fig.height=4, fig.width=3.9}
+# plot persistence diagram
+plot(diag.star$diagram, main = "Persistence diagram for\n KIC 5520878 star time series")
+legend(x = "bottomright", legend = c("0-cycles", "1-cycles", "2-cycles"), lty = c(NA, NA, NA), pch = c(19, 2, 5), col = c("black", "violetred2", "deepskyblue3"), cex = 1, lwd = 2)
+```
+
+References
+
+Heidel, J., & Fu, Z. (1999). Nonchaotic behaviour in three-dimensional quadratic systems II. The conservative case. Nonlinearity, 12(3), 617.

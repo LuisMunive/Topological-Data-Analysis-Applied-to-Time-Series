@@ -1,0 +1,171 @@
+---
+title: "Nonstationary stochastic process"
+author: "Luis Ramón Munive Hernández & Rodrigo Zúñiga Trejo"
+date: "9/3/2021"
+output: 
+  pdf_document:
+    keep_tex: true
+    latex_engine: xelatex
+header-inclues: \usepackage{amsmath, amsthm, amssymb}
+---
+
+MXN/USD exchange rate times series.
+
+```{r}
+# Needed libraries
+library(deSolve)
+library(ggplot2)
+library(gg3D)
+library(latex2exp)
+library(nonlinearTseries)
+library(TDA)
+library(zoo)
+library(tseries)
+library(dplyr)
+library(lubridate)
+```
+
+```{r}
+# Function for plot path point cloud constructed via Takens' theorem
+make_plot <- function(df, theta, phi, title){
+  ggplot(df, aes(x = x, y = y, z = z, colour = time)) +
+    axes_3D(theta = theta, phi = phi) +
+    stat_3D(theta = theta, phi = phi, geom = "path", size = 1) +
+    labs_3D(theta = theta, phi = phi,
+            labs= c("x", "y", "z"),
+            angle = c(0, 0, 0),
+            hjust = c(0, 1, 1),
+            vjust = c(1, 1, 0), size = 7) +
+    ggtitle(title) +
+    theme_void() +
+    theme(plot.title = element_text(hjust = 0.5), legend.position = "none")
+}
+```
+
+```{r, eval=FALSE}
+mxn.usd <- as.data.frame(read.csv("us-dollar-mexican-peso-exchange-rate-historical-chart.csv", header = TRUE))
+
+mxn.usd <- mxn.usd[seq(10, dim(mxn.usd)[1], by = 1), 1]
+
+date <- c()
+value <- c()
+
+for(i in 1:length(mxn.usd)){
+  if(i %% 2 == 0){
+    value[i / 2] <- mxn.usd[i]
+  }
+}
+
+date <- setdiff(mxn.usd, value)
+
+mxn.usd <- as.data.frame(cbind(as.character(date), as.numeric(value)))
+colnames(mxn.usd) <- c("date", "value")
+mxn.usd$value <- as.numeric(mxn.usd$value)
+```
+
+```{r, eval=FALSE}
+mxn.usd$date <- as.Date(as.character(date), format = "%Y-%m-%d")
+mxn.usd.ts <- zoo(mxn.usd$value, mxn.usd$date)
+```
+
+```{r}
+mxn.usd <- as.data.frame(read.csv("us-dollar-mexican-peso-exchange-rate-historical-chart_format2020.csv", header = TRUE))
+```
+
+```{r}
+mxn.usd$date <- as.Date(mxn.usd$date, format = "%Y-%m-%d")
+mxn.usd.ts <- zoo(mxn.usd$value, mxn.usd$date)
+```
+
+```{r MXN USD exchange rate time series, fig.height=3, fig.width=7}
+## Ploting MXN USD exchange rate time series
+plot(mxn.usd.ts , type = "l", lwd = 1, xlab = "Time", ylab = "USD price (in MXN)", main = "Daily MXN/USD exchange rate time series Jul 1994-Aug 2020", las = 1)
+```
+
+```{r tau and embedding dimension of MXNUSD exchange rate time series via Takens theorem, fig.height=3, fig.width=5}
+# Takens embedding MXN/USD exchange rate time series
+
+## tau-delay estimation based on the mutual information function
+tau.mxn.usd <- timeLag(mxn.usd$value, technique = "ami", lag.max = 6780, do.plot = T)
+tau.mxn.usd
+## phase space reconstruction via Takens' theorem
+tak.mxn.usd <- buildTakens(mxn.usd$value, embedding.dim = 3, time.lag = tau.mxn.usd)
+tak.mxn.usd.df <- as.data.frame(cbind(c(1:dim(tak.mxn.usd)[1]), tak.mxn.usd))
+colnames(tak.mxn.usd.df) <- c("time", "x", "y", "z")
+```
+
+```{r Path of point cloud for MXNUSD exchange rate time series constructed via Takens theorem, fig.height=6, fig.width=7}
+make_plot(tak.mxn.usd.df, theta = 45, phi = 0, title = "Takens' delay embedding attractor reconstruction of the\n daily MXN/USD exchange rate time series dataset") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+```
+
+```{r}
+# Augmented Dickey-Fuller test for sunspots time series
+adf.test(mxn.usd$value)
+```
+
+```{r}
+# Sampling 500 rows of phase space reconstruction, it make cheaper the computation of persistence diagram
+set.seed(02092021)
+sample.tak.mxn.usd <- tak.mxn.usd[sample(x = 1:dim(tak.mxn.usd)[1], size = 500, replace = FALSE), ]
+# persistence diagram construction
+diag.mxn.usd <- ripsDiag(sample.tak.mxn.usd, maxdimension = 2, maxscale = 1)
+```
+
+```{r Persistence diagram for MXN USD time series, fig.height=4, fig.width=3.9}
+# plot persistence diagram
+plot(diag.mxn.usd$diag, main = "Persistence diagram of MXN/USD\nexchange rate time series dataset")
+legend(x = "bottomright", legend = c("0-cycles", "1-cycles", "2-cycles"), lty = c(NA, NA, NA), pch = c(19, 2, 5), col = c("black", "violetred2", "deepskyblue3"), cex = 1, lwd = 2)
+```
+
+Monthly earthquakes amount in Mexico.
+
+```{r}
+earthquakes <- read.csv(file = "Earthquakes per month in Mexico.csv", header = TRUE)
+```
+
+```{r}
+earthquakes$Month <- as.Date(as.character(earthquakes$Month), format = "%Y-%m-%d")
+earthquakes.ts <- zoo(earthquakes$Earthquakes.per.month, earthquakes$Month)
+```
+
+```{r Earthquakes per month in Mexico time series, fig.height=3, fig.width=7}
+## Ploting earthquakes time series
+plot(earthquakes.ts , type = "l", lwd = 1, xlab = "Time", ylab = "Earthquakes amount", main = "Monthly earthquakes amount in Mexico time series Jan 1900-Aug 2021", las = 1)
+```
+
+```{r tau and embedding dimension of earthquakes time series via Takens theorem, fig.height=3, fig.width=5}
+# Takens embedding MXN/USD exchange rate time series
+
+## tau-delay estimation based on the mutual information function
+tau.earthquakes <- timeLag(earthquakes$Earthquakes.per.month, technique = "ami", lag.max = 1460, do.plot = T)
+tau.earthquakes
+## phase space reconstruction via Takens' theorem
+tak.earthquakes <- buildTakens(earthquakes$Earthquakes.per.month, embedding.dim = 3, time.lag = tau.earthquakes)
+tak.earthquakes.df <- as.data.frame(cbind(c(1:dim(tak.earthquakes)[1]), tak.earthquakes))
+colnames(tak.earthquakes.df) <- c("time", "x", "y", "z")
+```
+
+```{r Path of point cloud for earthquakes time series constructed via Takens theorem, fig.height=6, fig.width=7}
+make_plot(tak.earthquakes.df, theta = 45, phi = 0, title = "Takens' delay embedding attractor reconstruction of the\n monthly earthquakes time series dataset") +
+  theme(plot.title = element_text(size = 15, hjust = 0.5))
+```
+
+```{r}
+# Augmented Dickey-Fuller test for earthquakes time series
+adf.test(earthquakes$Earthquakes.per.month)
+```
+
+```{r}
+# Sampling 500 rows of phase space reconstruction, it make cheaper the computation of persistence diagram
+set.seed(02092021)
+sample.tak.earthquakes <- tak.earthquakes[sample(x = 1:dim(tak.earthquakes)[1], size = 200, replace = FALSE), ]
+# persistence diagram construction
+diag.earthquakes <- ripsDiag(sample.tak.earthquakes, maxdimension = 2, maxscale = 300)
+```
+
+```{r Persistence diagram for earthquakes time series, fig.height=4, fig.width=3.9}
+# plot persistence diagram
+plot(diag.earthquakes$diag, main = "Persistence diagram of\nearthquakes time series dataset")
+legend(x = "bottomright", legend = c("0-cycles", "1-cycles", "2-cycles"), lty = c(NA, NA, NA), pch = c(19, 2, 5), col = c("black", "violetred2", "deepskyblue3"), cex = 1, lwd = 2)
+```
